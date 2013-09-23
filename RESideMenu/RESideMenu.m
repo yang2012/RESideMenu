@@ -44,102 +44,23 @@ NSString * const RESideMenuDidClose = @"RESideMenuDidClose";
 @property (assign, readwrite, nonatomic) CGFloat initialX;
 @property (assign, readwrite, nonatomic) CGSize originalSize;
 @property (strong, readonly, nonatomic) UIImageView *screenshotView;
-@property (strong, readonly, nonatomic) UITableView *tableView;
 @property (strong, nonatomic) UIViewController *topController;
-
-// Array containing menu (which are array of items)
-@property (strong, readwrite, nonatomic) NSMutableArray *menuStack;
-@property (strong, readwrite, nonatomic) RESideMenuItem *backMenu;
 
 @end
 
 @implementation RESideMenu
 @synthesize backgroundView = _backgroundView;
-@synthesize tableView = _tableView;
 
 - (id)init
 {
     if (self = [super init]) {
         self.verticalPortraitOffset = self.verticalLandscapeOffset = 100;
         self.horizontalPortraitOffset = self.horizontalLandscapeOffset = 50;
-        self.itemHeight = 50;
-        self.font = [UIFont fontWithName:@"HelveticaNeue-Light" size:21];
-        self.textColor = [UIColor whiteColor];
-        self.highlightedTextColor = [UIColor lightGrayColor];
         self.hideStatusBarArea = YES;
         self.openStatusBarStyle = UIStatusBarStyleDefault;
-        self.menuStack = [NSMutableArray array];
     }
     
     return self;
-}
-
-- (id)initWithItems:(NSArray *)items
-{
-    self = [self init];
-    if (!self)
-        return nil;
-    
-    _items = items;
-    [_menuStack addObject:items];
-    [self initBackMenuItem];
-    
-    return self;
-}
-
-- (void)initBackMenuItem
-{
-    _backMenu = [[RESideMenuItem alloc] initWithTitle:@"<" action:nil];
-}
-
-- (void)reloadWithItems:(NSArray *)items
-{
-    [self reloadWithItems:items push:YES];
-}
-
-- (void)reloadWithItems:(NSArray *)items push:(BOOL)push
-{
-    if(push && ![_menuStack containsObject:items])
-        [_menuStack addObject:items];
-    else {
-        // Make sure the last object in the stack is our new menu
-        NSInteger lastObjectIndex = [_menuStack indexOfObject:[_menuStack lastObject]];
-        if (lastObjectIndex != NSNotFound) {
-            [_menuStack replaceObjectAtIndex:lastObjectIndex withObject:items];
-        }
-    }
-    
-    // Animate to disappear
-    //
-    __typeof (&*self) __weak weakSelf = self;
-    weakSelf.tableView.transform = CGAffineTransformScale(_tableView.transform, 0.9, 0.9);
-    [UIView animateWithDuration:0.5 animations:^{
-        weakSelf.tableView.transform = CGAffineTransformIdentity;
-        weakSelf.tableView.alpha = 0;
-    }];
-    
-    // Set items and reload
-    //
-    RESideMenuItem * firstItem = items[0];
-    if(!_backMenu)
-        [self initBackMenuItem];
-    if (_isInSubMenu && firstItem!=_backMenu) {
-        NSMutableArray * array = [NSMutableArray arrayWithObject:_backMenu];
-        [array addObjectsFromArray:items];
-        _items = array;
-    } else {
-        _items = items;
-    }
-    
-    [self.tableView reloadData];
-    
-    // Animate to reappear once reloaded
-    //
-    weakSelf.tableView.transform = CGAffineTransformScale(_tableView.transform, 1, 1);
-    [UIView animateWithDuration:0.5 animations:^{
-        weakSelf.tableView.transform = CGAffineTransformIdentity;
-        weakSelf.tableView.alpha = 1;
-    }];
 }
 
 #pragma mark -
@@ -150,8 +71,6 @@ NSString * const RESideMenuDidClose = @"RESideMenuDidClose";
     if (_isShowing)
         return;
 
-    [[UIDevice currentDevice] beginGeneratingDeviceOrientationNotifications];
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(deviceOrientationDidChange) name:UIDeviceOrientationDidChangeNotification object:nil];
     [[NSNotificationCenter defaultCenter] postNotificationName:RESideMenuWillOpen object:nil];
     _isShowing = YES;
     _showFromPan = NO;
@@ -196,8 +115,6 @@ NSString * const RESideMenuDidClose = @"RESideMenuDidClose";
     if (!_isShowing)
         return;
     
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-    [[UIDevice currentDevice] endGeneratingDeviceOrientationNotifications];
     [self restoreFromRect:_screenshotView.frame];
 }
 
@@ -218,7 +135,7 @@ NSString * const RESideMenuDidClose = @"RESideMenuDidClose";
     
     [self.topController.view setNeedsDisplay];
     [self.view bringSubviewToFront:_backgroundView];
-    [self.view bringSubviewToFront:_tableView];
+    [self.view bringSubviewToFront:_contentContainerView];
     [self.view bringSubviewToFront:_screenshotView];
 
     __typeof (&*self) __weak weakSelf = self;
@@ -251,9 +168,10 @@ NSString * const RESideMenuDidClose = @"RESideMenuDidClose";
     [self minimizeFromRect:CGRectMake(0, 0, _originalSize.width, _originalSize.height)];
 }
 
+
 - (REBackgroundView*)backgroundView
 {
-    if(!_backgroundView) {        
+    if(!_backgroundView) {
         _backgroundView = [[REBackgroundView alloc] initWithFrame:CGRectMake(0, -20, self.view.bounds.size.width, self.view.bounds.size.height + 20)];
         _backgroundView.autoresizingMask = UIViewAutoresizingFlexibleHeight | UIViewAutoresizingFlexibleWidth;
         _backgroundView.backgroundImage = _backgroundImage;
@@ -261,20 +179,15 @@ NSString * const RESideMenuDidClose = @"RESideMenuDidClose";
     return _backgroundView;
 }
 
-- (UITableView*)tableView
+- (UIView *)contentContainerView
 {
-    if(!_tableView) {
-        _tableView = [[UITableView alloc] initWithFrame:CGRectMake(self.backgroundView.frame.origin.x, self.backgroundView.frame.origin.y, self.backgroundView.frame.size.width, self.backgroundView.frame.size.height)];
-        _tableView.backgroundColor = [UIColor clearColor];
-        _tableView.backgroundView = nil;
-        _tableView.delegate = self;
-        _tableView.dataSource = self;
-        _tableView.tableHeaderView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, self.verticalOffset)];
-        _tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
-        _tableView.alpha = 0;
-        _tableView.autoresizingMask = UIViewAutoresizingFlexibleHeight | UIViewAutoresizingFlexibleWidth;
+    if(!_contentContainerView) {
+        _contentContainerView = [[UIView alloc] initWithFrame:CGRectMake(self.backgroundView.frame.origin.x, self.backgroundView.frame.origin.y, self.backgroundView.frame.size.width, self.backgroundView.frame.size.height)];
+        _contentContainerView.backgroundColor = [UIColor clearColor];
+        _contentContainerView.alpha = 0;
+        _contentContainerView.autoresizingMask = UIViewAutoresizingFlexibleHeight | UIViewAutoresizingFlexibleWidth;
     }
-    return _tableView;
+    return _contentContainerView;
 }
 
 - (void)updateViews
@@ -295,8 +208,8 @@ NSString * const RESideMenuDidClose = @"RESideMenuDidClose";
     if(!self.backgroundView.superview)
         [self.view addSubview:_backgroundView];
     
-    self.tableView.alpha = 0;
-    [self.view addSubview:self.tableView];
+    self.contentContainerView.alpha = 0;
+    [self.view addSubview:self.contentContainerView];
     
     [self.view addSubview:_screenshotView];
     
@@ -312,9 +225,9 @@ NSString * const RESideMenuDidClose = @"RESideMenuDidClose";
 
 - (void)minimizeFromRect:(CGRect)rect
 {
-    CGFloat widthOffset = self.view.bounds.size.width / (UIDeviceOrientationIsPortrait([[UIApplication sharedApplication] statusBarOrientation]) ? 4 : 3);
+    CGFloat widthOffset = self.view.bounds.size.width / (UIDeviceOrientationIsPortrait([[UIApplication sharedApplication] statusBarOrientation]) ? 6 : 3);
     
-    CGFloat m = 1 - (((self.view.bounds.size.width - widthOffset) / self.view.bounds.size.width) * 210.0 / self.view.bounds.size.width);
+    CGFloat m = 1 - (((self.view.bounds.size.width - widthOffset) / self.view.bounds.size.width) * 150.0 / self.view.bounds.size.width);
     CGFloat newWidth = _originalSize.width * m;
     CGFloat newHeight = _originalSize.height * m;
     
@@ -331,19 +244,19 @@ NSString * const RESideMenuDidClose = @"RESideMenuDidClose";
     _screenshotView.layer.bounds = CGRectMake(self.view.bounds.size.width - widthOffset, (self.view.bounds.size.height - newHeight) / 2.0, newWidth, newHeight);
     [CATransaction commit];
     
-    if (_tableView.alpha  != 1 ) {
+    if (_contentContainerView.alpha  != 1 ) {
         __typeof (&*self) __weak weakSelf = self;
         
-        if(_tableView.alpha == 0){
-            weakSelf.tableView.transform = CGAffineTransformScale(CGAffineTransformIdentity, 0.9, 0.9);
+        if(_contentContainerView.alpha == 0){
+            weakSelf.contentContainerView.transform = CGAffineTransformScale(CGAffineTransformIdentity, 0.9, 0.9);
         }
         
         [UIView animateWithDuration:0.5 animations:^{
-            weakSelf.tableView.transform = CGAffineTransformIdentity;
+            weakSelf.contentContainerView.transform = CGAffineTransformIdentity;
         }];
         
         [UIView animateWithDuration:0.6 animations:^{
-            weakSelf.tableView.alpha = 1;
+            weakSelf.contentContainerView.alpha = 1;
         }];
     }
 }
@@ -366,8 +279,8 @@ NSString * const RESideMenuDidClose = @"RESideMenuDidClose";
     
     __typeof (&*self) __weak weakSelf = self;
     [UIView animateWithDuration:0.3 animations:^{
-        weakSelf.tableView.alpha = 0;
-        weakSelf.tableView.transform = CGAffineTransformScale(CGAffineTransformIdentity, 0.9, 0.9);
+        weakSelf.contentContainerView.alpha = 0;
+        weakSelf.contentContainerView.transform = CGAffineTransformScale(CGAffineTransformIdentity, 0.9, 0.9);
     }];
     
     // Restore the status bar to its original state
@@ -391,7 +304,7 @@ NSString * const RESideMenuDidClose = @"RESideMenuDidClose";
 - (void)restoreView
 {
     [_backgroundView removeFromSuperview];
-    [_tableView removeFromSuperview];
+    [_contentContainerView removeFromSuperview];
     
     __typeof (&*self) __weak weakSelf = self;
     [UIView animateWithDuration:0.1 animations:^{
@@ -433,22 +346,22 @@ NSString * const RESideMenuDidClose = @"RESideMenuDidClose";
         } else {
             _initialX = _screenshotView.frame.origin.x;
         }
-        _tableView.transform = CGAffineTransformIdentity;
+        _contentContainerView.transform = CGAffineTransformIdentity;
 	}
 	
     if (sender.state == UIGestureRecognizerStateChanged) {
         _screenshotView.layer.anchorPoint = CGPointMake(0, 0);
         
         CGFloat x = translation.x + _initialX ;
-        CGFloat m = 1 - ((x / self.view.bounds.size.width) * 210.0 / self.view.bounds.size.width);
+        CGFloat m = 1 - ((x / self.view.bounds.size.width) * 150.0 / self.view.bounds.size.width);
         CGFloat y = (self.view.bounds.size.height - _originalSize.height * m) / 2.0;
         
         CGFloat widthOffset = self.view.bounds.size.width / (UIDeviceOrientationIsPortrait([[UIApplication sharedApplication] statusBarOrientation]) ? 4 : 3);
         
         float alphaOffset = (x + widthOffset) / self.view.bounds.size.width;
-        _tableView.alpha = alphaOffset;
+        _contentContainerView.alpha = alphaOffset;
         float scaleOffset = 0.6 +(alphaOffset*0.4);
-        _tableView.transform = CGAffineTransformScale(CGAffineTransformIdentity, scaleOffset, scaleOffset);
+        _contentContainerView.transform = CGAffineTransformScale(CGAffineTransformIdentity, scaleOffset, scaleOffset);
         
         if (x < 0 || y < 0) {
             _screenshotView.frame = CGRectMake(0, 0, _originalSize.width, _originalSize.height);
@@ -472,137 +385,6 @@ NSString * const RESideMenuDidClose = @"RESideMenuDidClose";
     [self restoreFromRect:_screenshotView.frame];
 }
 
-#pragma mark -
-#pragma mark Table view data source
-
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
-{
-    return _items.count;
-}
-
-- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
-{
-    return self.itemHeight;
-}
-
-- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
-{
-    NSString *cellIdentifier = @"RESideMenuCell";
-    
-    RESideMenuItem *item = [_items objectAtIndex:indexPath.row];
-    
-    RESideMenuCell *cell = [[RESideMenuCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:cellIdentifier];
-    cell.backgroundColor = [UIColor clearColor];
-    cell.selectedBackgroundView = [[UIView alloc] init];
-    cell.textLabel.font = self.font;
-    cell.textLabel.textColor = self.textColor;
-    cell.textLabel.highlightedTextColor = self.highlightedTextColor;
-    
-    UITapGestureRecognizer *tapped;
-    UITextField *field;
-    
-    switch (item.type) {
-        case RESideMenuItemTypeField:
-            cell.textLabel.text = @"";
-            field = [[UITextField alloc] initWithFrame:CGRectMake(self.horizontalOffset, 12, 200, cell.frame.size.height)];
-            field.delegate = self;
-            [field setAutocapitalizationType:UITextAutocapitalizationTypeNone];
-            [field setAutocorrectionType:UITextAutocorrectionTypeNo];
-            [field setFont:self.font];
-            [field setTextColor:self.textColor];
-            [field setPlaceholder:item.title];
-            [field setReturnKeyType:UIReturnKeyDone];
-            field.tag = indexPath.row;
-            [cell addSubview:field];
-            break;
-            
-        default:
-            cell.textLabel.text = item.title;
-            cell.imageView.userInteractionEnabled = YES;
-            cell.imageView.tag = indexPath.row;
-
-            break;
-    }
-    cell.imageView.image = item.image;
-    cell.imageView.highlightedImage = item.highlightedImage;
-    tapped = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(imageAction:)];
-    [cell.imageView addGestureRecognizer:tapped];
-    cell.horizontalOffset = self.horizontalOffset;
-    
-    return cell;
-}
-
-#pragma mark - 
-#pragma mark User Interaction
-
-- (void)imageAction:(UITapGestureRecognizer *)sender
-{
-    UITapGestureRecognizer *gesture = (UITapGestureRecognizer *)sender;
-    RESideMenuItem * item = _items[gesture.view.tag];
-    if (item.imageAction) {
-        item.imageAction(self, item);
-    }
-}
-
-#pragma mark - 
-#pragma mark Text Field
-
-- (BOOL)textFieldShouldReturn:(UITextField *)textField
-{
-    [textField resignFirstResponder];
-    
-    NSString *s = [textField.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-    
-    if (s.length > 0) {
-        RESideMenuItem *item = [_items objectAtIndex:textField.tag];
-        _lastFieldInput = textField.text;
-        if (item.action) {
-            item.action(self, item);
-        }
-    } else {
-        textField.text = @"";
-    }
-    return YES;
-}
-
-#pragma mark - Table view delegate
-
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
-{
-    [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    RESideMenuItem *item = [_items objectAtIndex:indexPath.row];
-    
-    if (item.type == RESideMenuItemTypeField) {
-        return;
-    }
-    
-    // Prioritize action in case user want to interact with submenu in it
-    //
-    if (item.action) {
-        item.action(self, item);
-    }
-    
-    // Case back on subMenu
-    //
-    if (_isInSubMenu && indexPath.row==0 && indexPath.section == 0) {
-        
-        [_menuStack removeLastObject];
-        if (_menuStack.count == 1) {
-            _isInSubMenu = NO;
-        }
-        [self reloadWithItems:_menuStack.lastObject];
-        
-        return;
-    }
-    
-    // Case menu with subMenu
-    //
-    if (item.subItems) {
-        _isInSubMenu = YES;
-        [self reloadWithItems:item.subItems];
-    }
-}
-
 #pragma mark - Status bar
 
 #ifdef __IPHONE_7_0
@@ -611,49 +393,5 @@ NSString * const RESideMenuDidClose = @"RESideMenuDidClose";
     return _isShowing ? self.openStatusBarStyle : [self.topController preferredStatusBarStyle];
 }
 #endif
-
-#pragma mark - Rotation
-
-- (void)deviceOrientationDidChange
-{
-    UIDeviceOrientation orientation = [[UIDevice currentDevice] orientation];
-    if (orientation == UIDeviceOrientationPortrait ||
-        orientation == UIDeviceOrientationPortraitUpsideDown ||
-        orientation == UIDeviceOrientationLandscapeLeft ||
-        orientation == UIDeviceOrientationLandscapeRight) {
-        if ((UIInterfaceOrientation)orientation != self.interfaceOrientation && _isShowing) {
-            [self performSelector:@selector(hide) withObject:nil afterDelay:0.1];
-            [[self class] performSelector:@selector(attemptRotationToDeviceOrientation) withObject:nil afterDelay:0.5];
-        }
-    }
-}
-
-- (BOOL)shouldAutorotate
-{
-    return !_isShowing;
-}
-
-- (BOOL)shouldAutorotateToInterfaceOrientation:(UIInterfaceOrientation)toInterfaceOrientation
-{
-    return !_isShowing;
-}
-
-- (NSUInteger)supportedInterfaceOrientations
-{
-    if (self.topController) {
-        return [self.topController supportedInterfaceOrientations];
-    } else {
-        return [super supportedInterfaceOrientations];
-    }
-}
-
-- (UIInterfaceOrientation)preferredInterfaceOrientationForPresentation
-{
-    if (self.topController) {
-        return [self.topController preferredInterfaceOrientationForPresentation];
-    } else {
-        return [super preferredInterfaceOrientationForPresentation];
-    }
-}
 
 @end
