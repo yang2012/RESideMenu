@@ -86,30 +86,6 @@ NSString * const RESideMenuDidClose = @"RESideMenuDidClose";
     [self performSelector:@selector(showAfterDelay) withObject:nil afterDelay:0.1];
 }
 
-- (void)showFromPanGesture:(UIPanGestureRecognizer *)sender
-{
-    CGPoint translation = [sender translationInView:self.view];
-    
-    _showFromPan = YES;
-	if (sender.state == UIGestureRecognizerStateBegan) {
-        if (_isShowing || translation.x<=0)
-            return;
-        
-        _isShowing = YES;
-        
-        if (!_appIsHidingStatusBar && _hideStatusBarArea)
-            [[UIApplication sharedApplication] setStatusBarHidden:YES withAnimation:UIStatusBarAnimationFade];
-        
-        [self updateStatusBar];
-        
-        [self updateViews];
-        _screenshotView.frame = CGRectMake(0, 0, _originalSize.width, _originalSize.height);
-        
-	}
-    
-    [self panGestureRecognized:sender];
-}
-
 - (void)hide
 {
     if (!_isShowing)

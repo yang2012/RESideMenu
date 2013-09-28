@@ -47,7 +47,6 @@ extern NSString * const RESideMenuDidClose;
 @property (strong, readonly, nonatomic) NSString *lastFieldInput;
 
 - (void)show;
-- (void)showFromPanGesture:(UIPanGestureRecognizer *)sender;
 - (void)hide;
 - (void)displayContentController:(UIViewController*)content;
 
